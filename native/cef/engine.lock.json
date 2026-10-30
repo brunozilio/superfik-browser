@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "cef_commit": "14c5a089e8452874cb1a556dc3fde26ed2d87723",
+  "cef_version": "154.0.34+g14c5a08+chromium-154.0.8037.98",
+  "chromium_ref": "refs/tags/154.0.8037.98",
+  "chromium_commit": "b859317bf11f6be47f9b7799ec690a0a42a1fb33",
+  "chromium_url": "https://github.com/chromium/chromium.git",
+  "depot_tools_commit": "5699326929d1b9dc478d648737a9f98ad8f7f724",
+  "target": "aarch64-apple-darwin",
+  "gn_defines": "is_official_build=true is_component_build=false use_remoteexec=false symbol_level=1",
+  "patches": [
+    {
+      "name": "0001-engine-abi.patch",
+      "repository": "cef",
+      "sha256": "38adebf227bc80a1fc1bc045c3dbe1d88bc5ea20d637d0db79cdfeaf8ccb3a5a"
+    },
+    {
+      "name": "0002-hardware-profile-transport.patch",
+      "repository": "cef",
+      "sha256": "8b3e8fa40ab6f332a3717712fda481f710fb2458d97e92c334fc27093ae74faf"
+    },
+    {
+      "name": "0003-native-hardware-getters.patch",
+      "repository": "chromium",
+      "sha256": "e9dd1497f86207785c05c7811a4ba1d1f29768575a6d02e426db56f60bb33be7"
+    }
+  ]
+}

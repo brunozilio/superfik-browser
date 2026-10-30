@@ -1,0 +1,136 @@
+diff --git a/content/browser/client_hints/client_hints.cc b/content/browser/client_hints/client_hints.cc
+index ca7e3fd..ad44f48 100644
+--- a/content/browser/client_hints/client_hints.cc
++++ b/content/browser/client_hints/client_hints.cc
+@@ -236,11 +236,20 @@ void RemoveClientHintHeader(WebClientHintsType client_hint_type,
+ }
+ 
+ void AddDeviceMemoryHeader(net::HttpRequestHeaders* headers,
++                           BrowserContext* context,
+                            bool use_deprecated_version = false) {
+   DCHECK(headers);
+   blink::ApproximatedDeviceMemory::Initialize();
+-  const float device_memory =
++  double device_memory =
+       blink::ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
++  if (auto configured =
++          GetContentClient()->browser()->GetDeviceMemoryOverride(context)) {
++    const double value = *configured;
++    if (value == 0.25 || value == 0.5 || value == 1 || value == 2 ||
++        value == 4 || value == 8) {
++      device_memory = value;
++    }
++  }
+   DCHECK_LT(0.0, device_memory);
+   SetHeaderToDouble(headers,
+                     use_deprecated_version
+@@ -862,10 +871,10 @@ void AddRequestClientHintsHeaders(
+ 
+   // Add Headers
+   if (ShouldAddClientHint(data, WebClientHintsType::kDeviceMemory_DEPRECATED)) {
+-    AddDeviceMemoryHeader(headers, /*use_deprecated_version*/ true);
++    AddDeviceMemoryHeader(headers, context, /*use_deprecated_version*/ true);
+   }
+   if (ShouldAddClientHint(data, WebClientHintsType::kDeviceMemory)) {
+-    AddDeviceMemoryHeader(headers);
++    AddDeviceMemoryHeader(headers, context);
+   }
+   if (ShouldAddClientHint(data, WebClientHintsType::kDpr_DEPRECATED)) {
+     AddDPRHeader(headers, context, url, /*use_deprecated_version*/ true);
+diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
+index 6499e2f..a15b782 100644
+--- a/content/public/browser/content_browser_client.cc
++++ b/content/public/browser/content_browser_client.cc
+@@ -1411,6 +1411,11 @@ std::string ContentBrowserClient::GetUserAgent() {
+   return std::string();
+ }
+ 
++std::optional<double> ContentBrowserClient::GetDeviceMemoryOverride(
++    BrowserContext* context) {
++  return std::nullopt;
++}
++
+ blink::UserAgentMetadata ContentBrowserClient::GetUserAgentMetadata() {
+   return blink::UserAgentMetadata();
+ }
+diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
+index 933ff42..c3a12d0 100644
+--- a/content/public/browser/content_browser_client.h
++++ b/content/public/browser/content_browser_client.h
+@@ -2481,6 +2481,10 @@ class CONTENT_EXPORT ContentBrowserClient {
+   // Returns the user agent. Content may cache this value.
+   virtual std::string GetUserAgent();
+ 
++  // Optional native laboratory override for negotiated device-memory client
++  // hints. Return nullopt to preserve the platform's normal value.
++  virtual std::optional<double> GetDeviceMemoryOverride(BrowserContext* context);
++
+   // Returns user agent metadata. Content may cache this value.
+   virtual blink::UserAgentMetadata GetUserAgentMetadata();
+ 
+diff --git a/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc b/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
+index f5c0db2..c7bfe87 100644
+--- a/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
++++ b/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
+@@ -4,12 +4,26 @@
+ 
+ #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
+ 
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/system/sys_info.h"
+ 
+ namespace blink {
+ 
+ unsigned NavigatorConcurrentHardware::hardwareConcurrency() const {
+-  return static_cast<unsigned>(base::SysInfo::NumberOfProcessors());
++  // Keep the stock query on the path even when an experiment overrides its
++  // result. The switch is immutable and supplied by this renderer's profile.
++  const unsigned actual =
++      static_cast<unsigned>(base::SysInfo::NumberOfProcessors());
++  static const unsigned configured = [] {
++    unsigned value = 0;
++    const auto text = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++        "superfik-hardware-concurrency");
++    return base::StringToUint(text, &value) && value >= 1 && value <= 1024
++               ? value
++               : 0u;
++  }();
++  return configured ? configured : actual;
+ }
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+index 05fa33e..002fc5f 100644
+--- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
++++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/core/frame/navigator_device_memory.h"
+ 
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
+ #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+@@ -12,7 +14,19 @@
+ namespace blink {
+ 
+ float NavigatorDeviceMemory::deviceMemory() const {
+-  return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
++  const float actual = ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
++  static const float configured = [] {
++    double value = 0;
++    const auto text = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++        "superfik-device-memory");
++    if (base::StringToDouble(text, &value) &&
++        (value == 0.25 || value == 0.5 || value == 1 || value == 2 ||
++         value == 4 || value == 8)) {
++      return static_cast<float>(value);
++    }
++    return 0.0f;
++  }();
++  return configured ? configured : actual;
+ }
+ 
+ }  // namespace blink

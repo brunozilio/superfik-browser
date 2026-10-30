@@ -1,0 +1,115 @@
+diff --git a/libcef/browser/chrome/chrome_content_browser_client_cef.cc b/libcef/browser/chrome/chrome_content_browser_client_cef.cc
+index 3febdad..12e7ff7 100644
+--- a/libcef/browser/chrome/chrome_content_browser_client_cef.cc
++++ b/libcef/browser/chrome/chrome_content_browser_client_cef.cc
+@@ -9,6 +9,7 @@
+ 
+ #include "base/command_line.h"
+ #include "base/path_service.h"
++#include "base/strings/string_number_conversions.h"
+ #include "cef/include/wrapper/cef_library_loader.h"
+ #include "cef/libcef/browser/browser_frame.h"
+ #include "cef/libcef/browser/browser_host_base.h"
+@@ -34,6 +35,7 @@
+ #include "chrome/common/chrome_paths.h"
+ #include "chrome/common/chrome_switches.h"
+ #include "components/performance_manager/embedder/performance_manager_registry.h"
++#include "components/prefs/pref_service.h"
+ #include "content/public/browser/client_certificate_delegate.h"
+ #include "content/public/browser/navigation_throttle.h"
+ #include "content/public/browser/render_process_host.h"
+@@ -264,6 +266,28 @@ void ChromeContentBrowserClientCef::AppendExtraCommandLineSwitches(
+ #endif
+ 
+   if (process_type == switches::kRendererProcess) {
++    // Renderers belong to one BrowserContext. Read only that context's
++    // profile, so documents and workers inherit the same immutable native
++    // values without a browser-wide override or page-visible JS injection.
++    auto* host = content::RenderProcessHost::FromID(child_process_id);
++    auto* profile = host ? Profile::FromBrowserContext(host->GetBrowserContext())
++                         : nullptr;
++    if (profile && profile->GetPrefs()->GetBoolean("superfik.identity.enabled")) {
++      auto* identity = profile->GetPrefs();
++      const int concurrency =
++          identity->GetInteger("superfik.identity.hardware_concurrency");
++      if (concurrency >= 1 && concurrency <= 1024) {
++        command_line->AppendSwitchASCII("superfik-hardware-concurrency",
++                                        base::NumberToString(concurrency));
++      }
++      const double memory = identity->GetDouble("superfik.identity.device_memory");
++      if (memory == 0.25 || memory == 0.5 || memory == 1 || memory == 2 ||
++          memory == 4 || memory == 8) {
++        command_line->AppendSwitchASCII("superfik-device-memory",
++                                        base::NumberToString(memory));
++      }
++    }
++
+     // Propagate the following switches to the renderer command line (along with
+     // any associated values) if present in the browser command line.
+     static const char* const kSwitchNames[] = {
+@@ -412,6 +436,21 @@ void ChromeContentBrowserClientCef::CreateWindowResult(
+   CefBrowserInfoManager::GetInstance()->CreateWindowResult(opener, success);
+ }
+ 
++std::optional<double> ChromeContentBrowserClientCef::GetDeviceMemoryOverride(
++    content::BrowserContext* context) {
++  auto* profile = context ? Profile::FromBrowserContext(context) : nullptr;
++  if (!profile || !profile->GetPrefs()->GetBoolean("superfik.identity.enabled")) {
++    return std::nullopt;
++  }
++  const double memory =
++      profile->GetPrefs()->GetDouble("superfik.identity.device_memory");
++  if (memory == 0.25 || memory == 0.5 || memory == 1 || memory == 2 ||
++      memory == 4 || memory == 8) {
++    return memory;
++  }
++  return std::nullopt;
++}
++
+ void ChromeContentBrowserClientCef::OverrideWebPreferences(
+     content::WebContents* web_contents,
+     content::SiteInstance& main_frame_site,
+diff --git a/libcef/browser/chrome/chrome_content_browser_client_cef.h b/libcef/browser/chrome/chrome_content_browser_client_cef.h
+index 5fdb4d8..a6532ee 100644
+--- a/libcef/browser/chrome/chrome_content_browser_client_cef.h
++++ b/libcef/browser/chrome/chrome_content_browser_client_cef.h
+@@ -68,6 +68,8 @@ class ChromeContentBrowserClientCef : public ChromeContentBrowserClient {
+   void OverrideWebPreferences(content::WebContents* web_contents,
+                               content::SiteInstance& main_frame_site,
+                               blink::web_pref::WebPreferences* prefs) override;
++  std::optional<double> GetDeviceMemoryOverride(
++      content::BrowserContext* context) override;
+   void WillCreateURLLoaderFactory(
+       content::BrowserContext* browser_context,
+       content::RenderFrameHost* frame,
+diff --git a/libcef/browser/prefs/browser_prefs.cc b/libcef/browser/prefs/browser_prefs.cc
+index 1d4bab5..f645a93 100644
+--- a/libcef/browser/prefs/browser_prefs.cc
++++ b/libcef/browser/prefs/browser_prefs.cc
+@@ -48,6 +48,12 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
+ }
+ 
+ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
++  // Native laboratory overrides are disabled unless explicitly enabled on
++  // this request context before its renderer processes are created.
++  registry->RegisterBooleanPref("superfik.identity.enabled", false);
++  registry->RegisterIntegerPref("superfik.identity.hardware_concurrency", 0);
++  registry->RegisterDoublePref("superfik.identity.device_memory", 0.0);
++
+   registry->RegisterBooleanPref(cef::prefs::kEnableStorageNotificationService,
+                                 true);
+ 
+@@ -76,6 +82,13 @@ std::string GetAcceptLanguageList(Profile* profile) {
+ void SetInitialProfilePrefs(Profile* profile) {
+   auto* prefs = profile->GetPrefs();
+ 
++  // Never restore experimental overrides from an earlier process. Explicit
++  // false/zero values also shadow a parent profile's prefs for private
++  // contexts. The host applies opt-in values after context initialization.
++  prefs->SetBoolean("superfik.identity.enabled", false);
++  prefs->SetInteger("superfik.identity.hardware_concurrency", 0);
++  prefs->SetDouble("superfik.identity.device_memory", 0.0);
++
+   // Language preferences.
+   const std::string& accept_language_list =
+       GetAcceptLanguageListSetting(profile);

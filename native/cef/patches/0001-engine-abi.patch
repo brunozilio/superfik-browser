@@ -1,0 +1,15 @@
+diff --git a/libcef_dll/libcef_dll2.cc b/libcef_dll/libcef_dll2.cc
+--- a/libcef_dll/libcef_dll2.cc
++++ b/libcef_dll/libcef_dll2.cc
+@@ -40,6 +40,11 @@ CEF_EXPORT int cef_version_info(int entry) {
+       return CHROME_VERSION_BUILD;
+     case 7:
+       return CHROME_VERSION_PATCH;
++    // Superfik's engine revision marker. This private entry leaves CEF's
++    // public ABI and standard version fields unchanged. It identifies the
++    // custom engine; experimental feature support is negotiated separately.
++    case 0x535546:
++      return 1;
+     default:
+       return 0;
+   }
