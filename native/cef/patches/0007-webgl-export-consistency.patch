@@ -1,0 +1,130 @@
+diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+index 1e2b512f07..78b548b1c0 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.h"
++#include "third_party/blink/renderer/platform/superfik/canvas.h"
+ 
+ #include <memory>
+ 
+@@ -921,6 +922,21 @@ void WebGL2RenderingContextBase::readPixels(GLint x,
+     }
+     ContextGL()->ReadPixels(x, y, width, height, format, type,
+                             reinterpret_cast<void*>(offset));
++    if (format == GL_RGBA && width > 0 && height > 0 && superfik::Enabled("canvas") &&
++        (type == GL_UNSIGNED_BYTE || type == GL_FLOAT || type == GL_HALF_FLOAT)) {
++      const auto pack = GetPackPixelStoreParams();
++      const size_t pixel_bytes = type == GL_UNSIGNED_BYTE ? 4 : (type == GL_FLOAT ? 16 : 8);
++      const size_t row_bytes = ((static_cast<size_t>(pack.row_length ? pack.row_length : width) * pixel_bytes + pack.alignment - 1) / pack.alignment) * pack.alignment;
++      const size_t skip = pack.skip_rows * row_bytes + pack.skip_pixels * pixel_bytes;
++      const size_t bytes = skip + (height - 1) * row_bytes + width * pixel_bytes;
++      Vector<uint8_t> exported(base::checked_cast<wtf_size_t>(bytes));
++      ContextGL()->GetBufferSubDataCHROMIUM(GL_PIXEL_PACK_BUFFER, offset,
++                                           static_cast<GLsizeiptr>(bytes), exported.data());
++      const auto color_type = type == GL_UNSIGNED_BYTE ? kRGBA_8888_SkColorType : (type == GL_FLOAT ? kRGBA_F32_SkColorType : kRGBA_F16_SkColorType);
++      superfik::CanvasReadback(base::span(exported).subspan(skip), width, height, row_bytes, color_type);
++      ContextGL()->BufferSubData(GL_PIXEL_PACK_BUFFER, offset,
++                                 static_cast<GLsizeiptr>(bytes), exported.data());
++    }
+   }
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index e965eb4107..effccddfcb 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -5357,13 +5357,16 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+       return;
+     }
+     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
+-    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
++    if (format == GL_RGBA && width > 0 && height > 0 && superfik::Enabled("canvas") &&
++        (type == GL_UNSIGNED_BYTE || type == GL_FLOAT || type == GL_HALF_FLOAT || type == GL_HALF_FLOAT_OES)) {
+       const auto pack = GetPackPixelStoreParams();
+-      const size_t row_bytes = ((static_cast<size_t>(pack.row_length ? pack.row_length : width) * 4 + pack.alignment - 1) / pack.alignment) * pack.alignment;
+-      const size_t start = static_cast<size_t>(offset_in_bytes.ValueOrDie()) + pack.skip_rows * row_bytes + pack.skip_pixels * 4;
+-      const size_t length = (height - 1) * row_bytes + width * 4;
+-      superfik::CanvasBytes(pixels->ByteSpanMaybeShared().subspan(start, length),
+-                            width, height, row_bytes);
++      const size_t pixel_bytes = type == GL_UNSIGNED_BYTE ? 4 : (type == GL_FLOAT ? 16 : 8);
++      const size_t row_bytes = ((static_cast<size_t>(pack.row_length ? pack.row_length : width) * pixel_bytes + pack.alignment - 1) / pack.alignment) * pack.alignment;
++      const size_t start = static_cast<size_t>(offset_in_bytes.ValueOrDie()) + pack.skip_rows * row_bytes + pack.skip_pixels * pixel_bytes;
++      const size_t length = (height - 1) * row_bytes + width * pixel_bytes;
++      const auto color_type = type == GL_UNSIGNED_BYTE ? kRGBA_8888_SkColorType : (type == GL_FLOAT ? kRGBA_F32_SkColorType : kRGBA_F16_SkColorType);
++      superfik::CanvasReadback(pixels->ByteSpanMaybeShared().subspan(start, length),
++                               width, height, row_bytes, color_type);
+     }
+   }
+ }
+diff --git a/third_party/blink/renderer/platform/superfik/canvas.h b/third_party/blink/renderer/platform/superfik/canvas.h
+index f1697c7511..f0c6eac790 100644
+--- a/third_party/blink/renderer/platform/superfik/canvas.h
++++ b/third_party/blink/renderer/platform/superfik/canvas.h
+@@ -12,13 +12,14 @@ namespace blink::superfik {
+ // The pattern depends on canonical RGB values, so cropped reads, WebGL's
+ // inverted row order and image exports agree. Reapplying is idempotent.
+ inline void CanvasBytes(base::span<uint8_t> data, int width, int height, size_t row_bytes) {
+-  if (!Enabled("canvas") || !Seed()) return;
++  const uint32_t seed = Seed();
++  if (!Enabled("canvas") || !seed) return;
+   for (int y = 0; y < height; ++y) {
+     for (int x = 0; x < width; ++x) {
+       auto pixel = data.subspan(y * row_bytes + x * 4).first<4>();
+       if (!pixel[3]) continue;
+       const uint32_t key = (pixel[0] >> 2) | ((pixel[1] >> 2) << 6) | ((pixel[2] >> 2) << 12);
+-      const uint32_t pattern = Mix(Seed() ^ key);
++      const uint32_t pattern = Mix(seed ^ key);
+       for (int c = 0; c < 3; ++c)
+         pixel[c] = (pixel[c] & ~3U) | ((pattern >> (c * 2)) & 3U);
+     }
+@@ -57,5 +58,16 @@ inline void CanvasPixmap(const SkPixmap& target) {
+   SkPixmap exported(info, data->data(), row_bytes);
+   exported.readPixels(target.info(), target.writable_addr(), target.rowBytes());
+ }
++
++inline void CanvasReadback(base::span<uint8_t> data, int width, int height,
++                           size_t row_bytes, SkColorType color_type) {
++  if (!Enabled("canvas")) return;
++  if (color_type == kRGBA_8888_SkColorType) {
++    CanvasBytes(data, width, height, row_bytes);
++  } else {
++    const auto info = SkImageInfo::Make(width, height, color_type, kUnpremul_SkAlphaType);
++    CanvasPixmap(SkPixmap(info, data.data(), row_bytes));
++  }
++}
+ }  // namespace blink::superfik
+ #endif
+diff --git a/third_party/blink/renderer/platform/superfik/profile.h b/third_party/blink/renderer/platform/superfik/profile.h
+index 4e282c2c72..e99f98b016 100644
+--- a/third_party/blink/renderer/platform/superfik/profile.h
++++ b/third_party/blink/renderer/platform/superfik/profile.h
+@@ -57,20 +57,22 @@ inline uint32_t Mix(uint32_t value) {
+ }
+ 
+ inline void Audio(base::span<float> samples, uint32_t channel = 0) {
+-  if (!Enabled("audio") || !Seed()) return;
++  const uint32_t seed = Seed();
++  if (!Enabled("audio") || !seed) return;
+   for (size_t i = 0; i < samples.size(); ++i) {
+     if (samples[i] == 0 || !std::isfinite(samples[i])) continue;
+     auto bits = std::bit_cast<uint32_t>(samples[i]);
+-    bits = (bits & ~15U) | (Mix(Seed() ^ channel ^ static_cast<uint32_t>(i)) & 15U);
++    bits = (bits & ~15U) | (Mix(seed ^ channel ^ static_cast<uint32_t>(i)) & 15U);
+     samples[i] = std::bit_cast<float>(bits);
+   }
+ }
+ 
+ inline void AudioBytes(base::span<uint8_t> samples) {
+-  if (!Enabled("audio") || !Seed()) return;
++  const uint32_t seed = Seed();
++  if (!Enabled("audio") || !seed) return;
+   for (size_t i = 0; i < samples.size(); ++i) {
+     if (samples[i] == 0 || samples[i] == 128) continue;
+-    samples[i] = (samples[i] & ~1U) | (Mix(Seed() ^ static_cast<uint32_t>(i)) & 1U);
++    samples[i] = (samples[i] & ~1U) | (Mix(seed ^ static_cast<uint32_t>(i)) & 1U);
+   }
+ }
+ 

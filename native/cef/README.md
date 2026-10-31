@@ -6,25 +6,31 @@ and Rust/CEF integration changes have separate version histories.
 
 ## Current status
 
-Implemented tooling: pinned source preparation, patch checksums and resume
-verification, release build/staging commands, artifact checksums and native
-engine marker probing. Patch 0001 identifies the custom engine.
+The published `cef-154.0.34-superfik.1` engine supports native CPU/memory
+profiles, including negotiated memory client hints. Its runtime isolation was
+validated in pages, frames and dedicated workers, with defaults/private
+contexts preserved.
 
-Native patches 0002/0003 add per-RequestContext CPU/memory preferences, propagate
-them at renderer launch and override Blink's hardware getters. Both negotiated
-device-memory client-hint headers use the same per-context memory value. These
-initial patch revision compiled and passed artifact integrity and native marker
-checks. Acceptance subsequently exposed a renderer-side HTTP hint inconsistency.
-The current revision centralizes the renderer override in Blink's shared memory
-helper and awaits a rebuilt artifact and acceptance validation.
+The published `.2` candidate adds per-context native GPU identity, seeded canvas/audio
+readbacks, local-font restrictions and WebRTC construction policy. App-side
+CEF integration supplies screen metrics, fixed HTTP(S) proxies, scoped proxy
+authentication and the Settings profile editor. No JavaScript API shims are
+used.
 
-Not yet implemented: GPU, canvas, audio, fonts, screen, media and WebRTC
-overrides. Stock development builds remain available until the native engine
-has passed integration testing.
+The candidate passed isolated acceptance in pages, frames and workers,
+including WebGL2 pixel-pack buffers and floating-point reads, repeated process
+launches, default/private contexts, legacy real-value restoration and native
+clicks at DPR 1/2. Nine proxy scenarios cover HTTP/TLS proxies, HTTP/TLS origins,
+CONNECT, worker requests, invalid credentials, unavailable proxies, certificate
+rejection and no direct origin/UDP fallback.
+
+These are laboratory controls, not GPU/audio-device emulation or a guarantee
+of universal website compatibility. See [native profile protocol](PROFILE_PROTOCOL.md).
 
 ## Hardware experiment configuration
 
-With a validated custom engine, place `superfik-identity.json` in the existing
+Settings → Browser manages the new profile library. For legacy CPU/memory-only
+experiments, place `superfik-identity.json` in the existing
 conversation browser profile directory (`browser/profile-<conversation-id>`
 under Superfik's application data directory):
 
@@ -89,7 +95,8 @@ directory rather than discarding its changes.
 `engine.lock.json` pins CEF, Chromium, depot_tools, GN arguments and the ordered
 patch checksums. Patches specify `cef` or `chromium` as their source repository.
 Update a checksum deliberately when reviewing a patch change. An existing
-patched checkout refuses a different series.
+patched checkout rejects changed/reordered entries. A strictly appended series
+can reuse the build cache only after verifying the previous source ledger.
 
 The staging step produces the flattened distribution layout consumed by
 `cef-dll-sys`, including its `archive.json` compatibility metadata. It hashes all

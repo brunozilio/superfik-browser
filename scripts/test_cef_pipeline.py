@@ -59,11 +59,19 @@ class PipelineTests(unittest.TestCase):
                                   "sha256": digest(patches / "change.patch")}]}
             apply_series({"cef": source}, patches, lock)
             self.assertEqual(original.read_text(), "after\n")
+            (patches / "extension.patch").write_text(
+                "diff --git a/value.txt b/value.txt\n--- a/value.txt\n+++ b/value.txt\n"
+                "@@ -1 +1 @@\n-after\n+extended\n"
+            )
+            lock["patches"].append({"name": "extension.patch", "repository": "cef",
+                                    "sha256": digest(patches / "extension.patch")})
+            apply_series({"cef": source}, patches, lock)
+            self.assertEqual(original.read_text(), "extended\n")
             # CEF's translator creates untracked C API headers during build.
             # They are not edits to reviewed source files.
             (source / "generated.h").write_text("generated output\n")
             apply_series({"cef": source}, patches, lock)
-            self.assertEqual(original.read_text(), "after\n")
+            self.assertEqual(original.read_text(), "extended\n")
             original.write_text("unrelated edit\n")
             with self.assertRaisesRegex(ValueError, "diverged"):
                 apply_series({"cef": source}, patches, lock)
