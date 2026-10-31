@@ -78,7 +78,9 @@ def validate(directory, expected_patches=None, expected_build=None):
     if CEF_COMMIT not in header.read_text():
         raise ValueError("CEF header commit does not match pinned revision")
     archive = json.loads((directory / "archive.json").read_text())
-    if archive.get("name") != f"cef_binary_{CEF_VERSION}_macosarm64_minimal.tar.bz2":
+    names = {f"cef_binary_{CEF_VERSION}_macosarm64_minimal{extension}"
+             for extension in (".zip", ".tar.bz2")}
+    if archive.get("name") not in names:
         raise ValueError("archive metadata does not match pinned ABI")
     if archive.get("type") != "minimal" or not re.fullmatch("[0-9a-f]{40}", archive.get("sha1", "")):
         raise ValueError("archive metadata is incompatible with cef-dll-sys")

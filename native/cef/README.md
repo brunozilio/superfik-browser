@@ -13,7 +13,8 @@ engine marker probing. Patch 0001 identifies the custom engine.
 Native patches 0002/0003 add per-RequestContext CPU/memory preferences, propagate
 them at renderer launch and override Blink's hardware getters. Both negotiated
 device-memory client-hint headers use the same per-context memory value. These
-patches still require a successful full Chromium build and runtime validation.
+patches compiled in the initial engine build, which passed artifact integrity
+and native marker checks. Runtime validation is still required.
 
 Not yet implemented: GPU, canvas, audio, fonts, screen, media and WebRTC
 overrides. Stock development builds remain available until the native engine

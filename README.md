@@ -9,8 +9,8 @@ it does not compile Chromium on the standard hosted macOS runner.
 
 ## Status
 
-The initial engine build is in progress. No validated binary release is
-available yet. The current native patch series adds an engine marker and
+The initial engine compiled locally and passed artifact integrity and native
+marker checks. No binary release is published yet. The patch series adds an engine marker and
 opt-in CPU/memory overrides per browser context, including device-memory
 client hints. Runtime isolation and compatibility testing are still required.
 GPU, canvas, audio and other fingerprint overrides are not implemented.

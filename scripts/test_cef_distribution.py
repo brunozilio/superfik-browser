@@ -24,7 +24,7 @@ class DistributionTests(unittest.TestCase):
                 f'#define CEF_COMMIT_HASH "{CEF_COMMIT}"\n'
             )
             (distribution / "Release" / FRAMEWORK / "Chromium Embedded Framework").write_bytes(b"fixture")
-            archive = root / "fixture.tar.bz2"
+            archive = root / f"cef_binary_{CEF_VERSION}_macosarm64_minimal.zip"
             archive.write_bytes(b"fixture archive")
             staged = root / "staged"
             stage(distribution, staged)
@@ -35,6 +35,7 @@ class DistributionTests(unittest.TestCase):
             self.assertFalse((staged / "Release").exists())
             metadata = json.loads((staged / "archive.json").read_text())
             self.assertEqual(metadata["type"], "minimal")
+            self.assertTrue(metadata["name"].endswith(".zip"))
             self.assertEqual(len(metadata["sha1"]), 40)
             with self.assertRaisesRegex(ValueError, "already exists"):
                 stage(distribution, staged)

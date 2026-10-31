@@ -149,9 +149,10 @@ def build(work, destination, lock, env):
     apply_series(repositories, PATCHES, lock)
     name = f"cef_binary_{lock['cef_version']}_macosarm64_minimal"
     distribution = repositories["cef"] / "binary_distrib" / name
-    archive = Path(str(distribution) + ".tar.bz2")
-    if not archive.is_file():
-        raise ValueError(f"CEF did not produce the expected archive: {archive}")
+    archive = next((Path(str(distribution) + extension) for extension in (".zip", ".tar.bz2")
+                    if Path(str(distribution) + extension).is_file()), None)
+    if archive is None:
+        raise ValueError(f"CEF did not produce a zip or tar.bz2 archive for: {distribution}")
     stage(distribution, destination)
     seal_distribution(destination, records, lock, archive)
     probe(destination)

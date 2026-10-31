@@ -118,7 +118,7 @@ def seal_distribution(directory, records, lock, archive):
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 archive_hash.update(chunk)
         metadata.write_text(json.dumps({
-            "name": f"cef_binary_{CEF_VERSION}_macosarm64_minimal.tar.bz2",
+            "name": archive.name,
             "type": "minimal", "sha1": archive_hash.hexdigest(),
         }) + "\n")
     files = {}
