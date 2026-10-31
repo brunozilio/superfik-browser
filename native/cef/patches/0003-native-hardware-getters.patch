@@ -68,6 +68,43 @@ index 933ff42..c3a12d0 100644
    // Returns user agent metadata. Content may cache this value.
    virtual blink::UserAgentMetadata GetUserAgentMetadata();
  
+diff --git a/third_party/blink/common/device_memory/approximated_device_memory.cc b/third_party/blink/common/device_memory/approximated_device_memory.cc
+index 7fd53eb..6b84646 100644
+--- a/third_party/blink/common/device_memory/approximated_device_memory.cc
++++ b/third_party/blink/common/device_memory/approximated_device_memory.cc
+@@ -6,7 +6,9 @@
+ 
+ #include "base/byte_size.h"
+ #include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/feature_list.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/system/sys_info.h"
+ #include "third_party/blink/public/common/features.h"
+ 
+@@ -27,6 +29,22 @@ void ApproximatedDeviceMemory::Initialize() {
+ 
+ // static
+ float ApproximatedDeviceMemory::GetApproximatedDeviceMemory() {
++  // Shared by navigator.deviceMemory and renderer-side client-hint headers.
++  // Use the renderer's immutable profile value for both surfaces.
++  static const float configured = [] {
++    double value = 0;
++    const auto text = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++        "superfik-device-memory");
++    if (base::StringToDouble(text, &value) &&
++        (value == 0.25 || value == 0.5 || value == 1 || value == 2 ||
++         value == 4 || value == 8)) {
++      return static_cast<float>(value);
++    }
++    return 0.0f;
++  }();
++  if (configured) {
++    return configured;
++  }
+   return approximated_device_memory_gb_;
+ }
+ 
 diff --git a/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc b/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
 index f5c0db2..c7bfe87 100644
 --- a/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
@@ -95,40 +132,6 @@ index f5c0db2..c7bfe87 100644
 +    return base::StringToUint(text, &value) && value >= 1 && value <= 1024
 +               ? value
 +               : 0u;
-+  }();
-+  return configured ? configured : actual;
- }
- 
- }  // namespace blink
-diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
-index 05fa33e..002fc5f 100644
---- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
-+++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
-@@ -4,6 +4,8 @@
- 
- #include "third_party/blink/renderer/core/frame/navigator_device_memory.h"
- 
-+#include "base/command_line.h"
-+#include "base/strings/string_number_conversions.h"
- #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
- #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
- #include "third_party/blink/renderer/core/dom/document.h"
-@@ -12,7 +14,19 @@
- namespace blink {
- 
- float NavigatorDeviceMemory::deviceMemory() const {
--  return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
-+  const float actual = ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
-+  static const float configured = [] {
-+    double value = 0;
-+    const auto text = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-+        "superfik-device-memory");
-+    if (base::StringToDouble(text, &value) &&
-+        (value == 0.25 || value == 0.5 || value == 1 || value == 2 ||
-+         value == 4 || value == 8)) {
-+      return static_cast<float>(value);
-+    }
-+    return 0.0f;
 +  }();
 +  return configured ? configured : actual;
  }

@@ -22,7 +22,7 @@
     {
       "name": "0003-native-hardware-getters.patch",
       "repository": "chromium",
-      "sha256": "e9dd1497f86207785c05c7811a4ba1d1f29768575a6d02e426db56f60bb33be7"
+      "sha256": "03a469df35075fbef053a88c90f55edeaed19dba6ec38d080d8f4348f5e77cda"
     }
   ]
 }

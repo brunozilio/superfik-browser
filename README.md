@@ -15,6 +15,12 @@ opt-in CPU/memory overrides per browser context, including device-memory
 client hints. Runtime isolation and compatibility testing are still required.
 GPU, canvas, audio and other fingerprint overrides are not implemented.
 
+Integration acceptance confirmed distinct CPU/memory values in pages, iframes
+and dedicated workers, and preserved defaults in unmodified/private contexts.
+It also exposed a renderer-side device-memory HTTP hint inconsistency. The
+current patch revision moves that override into Blink's shared memory helper;
+its rebuilt artifact and complete acceptance test are still pending.
+
 ## Build and validate locally
 
 Full Xcode, its Metal component, and substantial free disk space are required.

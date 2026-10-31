@@ -13,8 +13,10 @@ engine marker probing. Patch 0001 identifies the custom engine.
 Native patches 0002/0003 add per-RequestContext CPU/memory preferences, propagate
 them at renderer launch and override Blink's hardware getters. Both negotiated
 device-memory client-hint headers use the same per-context memory value. These
-patches compiled in the initial engine build, which passed artifact integrity
-and native marker checks. Runtime validation is still required.
+initial patch revision compiled and passed artifact integrity and native marker
+checks. Acceptance subsequently exposed a renderer-side HTTP hint inconsistency.
+The current revision centralizes the renderer override in Blink's shared memory
+helper and awaits a rebuilt artifact and acceptance validation.
 
 Not yet implemented: GPU, canvas, audio, fonts, screen, media and WebRTC
 overrides. Stock development builds remain available until the native engine
@@ -70,6 +72,9 @@ comes from its official GitHub mirror; its resolved commit is checked against
 the lock independently of the version tag. Building
 Chromium requires substantial disk, network and compilation time. No remote
 execution service is used. Xcode is selected in the child environment only.
+Use a versioned Xcode installation via `DEVELOPER_DIR` to keep the SDK stable
+between incremental builds. Changing Xcode/SDK versions can invalidate caches;
+the matching Metal component must be installed for that Xcode version.
 The build fetches the pinned Chromium and V8 profiles and uses official-release
 PGO optimization.
 
