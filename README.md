@@ -13,7 +13,9 @@ The first engine release,
 [`cef-154.0.34-superfik.1`](https://github.com/brunozilio/superfik-browser/releases/tag/cef-154.0.34-superfik.1),
 is public and is consumed by Superfik CI.
 
-The next candidate adds native per-context GPU identification, seeded canvas
+The published
+[`cef-154.0.34-superfik.2`](https://github.com/brunozilio/superfik-browser/releases/tag/cef-154.0.34-superfik.2)
+candidate adds native per-context GPU identification, seeded canvas
 and audio readbacks, local-font restrictions and WebRTC policy. The application's
 CEF integration provides screen metrics, HTTP(S) proxies with scoped
 authentication, Keychain storage and a Settings profile editor.

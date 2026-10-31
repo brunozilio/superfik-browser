@@ -11,7 +11,7 @@ profiles, including negotiated memory client hints. Its runtime isolation was
 validated in pages, frames and dedicated workers, with defaults/private
 contexts preserved.
 
-The next candidate adds per-context native GPU identity, seeded canvas/audio
+The published `.2` candidate adds per-context native GPU identity, seeded canvas/audio
 readbacks, local-font restrictions and WebRTC construction policy. App-side
 CEF integration supplies screen metrics, fixed HTTP(S) proxies, scoped proxy
 authentication and the Settings profile editor. No JavaScript API shims are
