@@ -63,8 +63,7 @@ def source_state(directory, patch_paths):
     return result.hexdigest()
 
 
-def apply_series(repositories, patches, lock):
-    records = patch_records(patches, lock)
+def series_targets(repositories, patches, records):
     targets = {name: set() for name in repositories}
     for record in records:
         stats = output(["git", "apply", "--numstat", str((patches / record["name"]).resolve())],
@@ -75,24 +74,37 @@ def apply_series(repositories, patches, lock):
             if path.is_absolute() or ".." in path.parts or '"' in name or " => " in name:
                 raise ValueError("patch target is not a supported repository-relative path")
             targets[record["repository"]].add(name)
+    return targets
+
+
+def apply_series(repositories, patches, lock):
+    records = patch_records(patches, lock)
+    targets = series_targets(repositories, patches, records)
     # Keep the ledger outside both Git trees; otherwise its own bytes would
     # change the recorded source state on every resume.
     state_file = repositories.get("chromium", repositories["cef"]).parent / "superfik-patches.json"
     heads = {name: output(["git", "rev-parse", "HEAD"], path)
              for name, path in repositories.items()}
-    if state_file.exists():
-        state = json.loads(state_file.read_text())
-        current = {name: source_state(path, targets[name]) for name, path in repositories.items()}
-        if state != {"patches": records, "heads": heads, "sources": current}:
-            raise ValueError("patched checkout diverged; preserve it and use a new build directory")
-        return records
-    # A failed application intentionally leaves no success ledger. Do not
-    # retry over that checkout: report it so the caller can inspect the edits.
     progress = state_file.with_suffix(".in-progress")
     if progress.exists():
         raise ValueError("patch application was interrupted; inspect checkout before retrying")
+    applied_count = 0
+    if state_file.exists():
+        state = json.loads(state_file.read_text())
+        previous = state.get("patches", [])
+        if not previous or records[:len(previous)] != previous:
+            raise ValueError("patched checkout diverged; preserve it and use a new build directory")
+        prior_targets = series_targets(repositories, patches, previous)
+        current = {name: source_state(path, prior_targets[name]) for name, path in repositories.items()}
+        if state != {"patches": previous, "heads": heads, "sources": current}:
+            raise ValueError("patched checkout diverged; preserve it and use a new build directory")
+        applied_count = len(previous)
+        if applied_count == len(records):
+            return records
+    # A failed application intentionally leaves no success ledger. Do not
+    # retry over that checkout: report it so the caller can inspect the edits.
     progress.write_text(json.dumps({"patches": records, "heads": heads}, indent=2))
-    for item in records:
+    for item in records[applied_count:]:
         repository = repositories[item["repository"]]
         patch = (patches / item["name"]).resolve()
         run(["git", "apply", "--check", patch], cwd=repository)

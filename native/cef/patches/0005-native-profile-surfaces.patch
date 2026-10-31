@@ -1,0 +1,475 @@
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc b/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
+index 943d6ed7b7..0dd79912a6 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.h"
++#include "third_party/blink/renderer/platform/superfik/canvas.h"
+ 
+ #include "base/location.h"
+ #include "base/metrics/histogram_functions.h"
+@@ -180,6 +181,7 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
+ 
+   if (image_) {
+     skia_image_ = image_->PaintImageForCurrentFrame().GetSwSkImage();
++    skia_image_ = superfik::CanvasImage(skia_image_);
+     CHECK(skia_image_);
+     CHECK(!skia_image_->isTextureBacked());
+ 
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 6a5f09ae85..023aa4c9bd 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -1422,6 +1422,7 @@ String HTMLCanvasElement::ToDataURLInternal(
+     if (!data_buffer)
+       return String("data:,");
+ 
++    data_buffer->ApplyLaboratoryReadback();
+     String data_url = data_buffer->ToDataURL(encoding_mime_type, quality);
+     base::TimeDelta elapsed_time = base::TimeTicks::Now() - start_time;
+     float sqrt_pixels =
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+index 3d7a843995..418e126372 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
++#include "third_party/blink/renderer/platform/superfik/canvas.h"
+ 
+ #include <cmath>
+ #include <cstdint>
+@@ -518,6 +519,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+     }
+   }
+ 
++  superfik::CanvasPixmap(image_data->GetSkPixmap());
+   return image_data;
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/font_access/font_access.cc b/third_party/blink/renderer/modules/font_access/font_access.cc
+index c5984f34ce..20d2f5c7c9 100644
+--- a/third_party/blink/renderer/modules/font_access/font_access.cc
++++ b/third_party/blink/renderer/modules/font_access/font_access.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/modules/font_access/font_access.h"
++#include "third_party/blink/renderer/platform/superfik/profile.h"
+ 
+ #include <algorithm>
+ 
+@@ -153,6 +154,7 @@ void FontAccess::DidGetEnumerationResponse(
+ 
+   HeapVector<Member<FontMetadata>> entries;
+   for (const auto& element : table.fonts()) {
++    if (!superfik::FontAllowed(String::FromUtf8(element.family()))) continue;
+     // If the optional postscript name filter is set in QueryOptions,
+     // only allow items that match.
+     if (has_postscript_name_filter &&
+diff --git a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
+index b4c2f6839a..19e97dd32d 100644
+--- a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
++++ b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
+@@ -29,6 +29,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h"
++#include "third_party/blink/renderer/platform/superfik/profile.h"
+ 
+ #include <algorithm>
+ #include <memory>
+@@ -646,6 +647,13 @@ RTCPeerConnection* RTCPeerConnection::Create(
+     return nullptr;
+   }
+ 
++  // Count number of PeerConnections that could potentially be impacted by CSP
++  const auto* policy = superfik::Configuration().FindString("webrtc");
++  if (policy && *policy == "disabled") {
++    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
++                                      "WebRTC is disabled for this laboratory profile.");
++    return nullptr;
++  }
+   // Count number of PeerConnections that could potentially be impacted by CSP
+   auto* content_security_policy = context->GetContentSecurityPolicy();
+   if (content_security_policy &&
+diff --git a/third_party/blink/renderer/modules/webaudio/analyser_node.cc b/third_party/blink/renderer/modules/webaudio/analyser_node.cc
+index 4bc4b15f4b..cab5dabc67 100644
+--- a/third_party/blink/renderer/modules/webaudio/analyser_node.cc
++++ b/third_party/blink/renderer/modules/webaudio/analyser_node.cc
+@@ -24,6 +24,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/modules/webaudio/analyser_node.h"
++#include "third_party/blink/renderer/platform/superfik/profile.h"
+ 
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_analyser_options.h"
+ #include "third_party/blink/renderer/modules/webaudio/analyser_handler.h"
+@@ -126,19 +127,27 @@ double AnalyserNode::smoothingTimeConstant() const {
+ void AnalyserNode::getFloatFrequencyData(NotShared<DOMFloat32Array> array) {
+   GetAnalyserHandler().GetFloatFrequencyData(array.Get(),
+                                              context()->currentTime());
++  auto samples = array->AsSpan();
++  superfik::Audio(samples.first(std::min<size_t>(samples.size(), frequencyBinCount())));
+ }
+ 
+ void AnalyserNode::getByteFrequencyData(NotShared<DOMUint8Array> array) {
+   GetAnalyserHandler().GetByteFrequencyData(array.Get(),
+                                             context()->currentTime());
++  auto samples = array->AsSpan();
++  superfik::AudioBytes(samples.first(std::min<size_t>(samples.size(), frequencyBinCount())));
+ }
+ 
+ void AnalyserNode::getFloatTimeDomainData(NotShared<DOMFloat32Array> array) {
+   GetAnalyserHandler().GetFloatTimeDomainData(array.Get());
++  auto samples = array->AsSpan();
++  superfik::Audio(samples.first(std::min<size_t>(samples.size(), fftSize())));
+ }
+ 
+ void AnalyserNode::getByteTimeDomainData(NotShared<DOMUint8Array> array) {
+   GetAnalyserHandler().GetByteTimeDomainData(array.Get());
++  auto samples = array->AsSpan();
++  superfik::AudioBytes(samples.first(std::min<size_t>(samples.size(), fftSize())));
+ }
+ 
+ void AnalyserNode::ReportDidCreate() {
+diff --git a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
+index 4604be68ad..b26f2e0706 100644
+--- a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
++++ b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
+@@ -24,6 +24,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/modules/webaudio/offline_audio_context.h"
++#include "third_party/blink/renderer/platform/superfik/profile.h"
+ 
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/histogram_macros.h"
+@@ -437,6 +438,10 @@ void OfflineAudioContext::FireCompletionEvent() {
+       return;
+     }
+ 
++    for (unsigned channel = 0; channel < rendered_buffer->numberOfChannels(); ++channel) {
++      auto samples = rendered_buffer->getChannelData(channel);
++      if (samples) superfik::Audio(samples->AsSpan(), channel);
++    }
+     // Call the offline rendering completion event listener and resolve the
+     // promise too.
+     DispatchEvent(*OfflineAudioCompletionEvent::Create(rendered_buffer));
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 26c0a088cc..87b9971bab 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -24,6 +24,8 @@
+  */
+ 
+ #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
++#include "third_party/blink/renderer/platform/superfik/profile.h"
++#include "third_party/blink/renderer/platform/superfik/canvas.h"
+ 
+ #include <inttypes.h>
+ 
+@@ -4201,7 +4203,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+         return WebGLAny(script_state,
+-                        String(ContextGL()->GetString(GL_RENDERER)));
++                        superfik::Gpu("renderer", String(ContextGL()->GetString(GL_RENDERER))));
+       }
+       SynthesizeGLError(
+           GL_INVALID_ENUM, "getParameter",
+@@ -4210,7 +4212,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+         return WebGLAny(script_state,
+-                        String(ContextGL()->GetString(GL_VENDOR)));
++                        superfik::Gpu("vendor", String(ContextGL()->GetString(GL_VENDOR))));
+       }
+       SynthesizeGLError(
+           GL_INVALID_ENUM, "getParameter",
+@@ -5355,6 +5357,14 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+       return;
+     }
+     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
++    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
++      const auto pack = GetPackPixelStoreParams();
++      const size_t row_bytes = ((static_cast<size_t>(pack.row_length ? pack.row_length : width) * 4 + pack.alignment - 1) / pack.alignment) * pack.alignment;
++      const size_t start = offset_in_bytes.ValueOrDie() + pack.skip_rows * row_bytes + pack.skip_pixels * 4;
++      const size_t length = (height - 1) * row_bytes + width * 4;
++      superfik::CanvasBytes(pixels->ByteSpanMaybeShared().subspan(start, length),
++                            width, height, row_bytes);
++    }
+   }
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
+index 9d155705c1..15f149956f 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/modules/webgpu/gpu_adapter_info.h"
++#include "third_party/blink/renderer/platform/superfik/profile.h"
+ 
+ #include "third_party/blink/renderer/modules/webgpu/gpu_memory_heap_info.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu_subgroup_matrix_config.h"
+@@ -22,13 +23,13 @@ GPUAdapterInfo::GPUAdapterInfo(const String& vendor,
+                                const std::optional<uint32_t> d3d_shader_model,
+                                const std::optional<uint32_t> vk_driver_version,
+                                const String& power_preference)
+-    : vendor_(vendor),
+-      architecture_(architecture),
++    : vendor_(superfik::Gpu("vendor", vendor)),
++      architecture_(superfik::Gpu("architecture", architecture)),
+       subgroup_min_size_(subgroup_min_size),
+       subgroup_max_size_(subgroup_max_size),
+       is_fallback_adapter_(is_fallback_adapter),
+-      device_(device),
+-      description_(description),
++      device_(superfik::Gpu("device", device)),
++      description_(superfik::Gpu("description", description)),
+       driver_(driver),
+       backend_(backend),
+       type_(type),
+diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
+index 233618cf12..54d3b9177a 100644
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -1493,6 +1493,8 @@ component("platform") {
+     "search_engine_utils.h",
+     "sparse_vector.h",
+     "storage/blink_storage_key.cc",
++    "superfik/profile.h",
++    "superfik/canvas.h",
+     "storage/blink_storage_key.h",
+     "storage/blink_storage_key_hash.h",
+     "storage/blink_storage_key_mojom_traits.cc",
+diff --git a/third_party/blink/renderer/platform/fonts/mac/font_cache_mac.mm b/third_party/blink/renderer/platform/fonts/mac/font_cache_mac.mm
+index 6232b3c711..12aff08f51 100644
+--- a/third_party/blink/renderer/platform/fonts/mac/font_cache_mac.mm
++++ b/third_party/blink/renderer/platform/fonts/mac/font_cache_mac.mm
+@@ -33,6 +33,7 @@
+ #import <CoreFoundation/CoreFoundation.h>
+ #import <CoreText/CoreText.h>
+ #include <Foundation/Foundation.h>
++#include "third_party/blink/renderer/platform/superfik/profile.h"
+ 
+ #include <memory>
+ 
+@@ -396,6 +397,7 @@ bool IsSystemFontName(const AtomicString& font_name) {
+     const FontFaceCreationParams& creation_params,
+     float size,
+     AlternateFontName alternate_name) {
++  if (!superfik::FontAllowed(creation_params.Family())) return nullptr;
+   // CoreText restricts the access to the system dot prefixed fonts, so return
+   // nullptr to use fallback font instead.
+   if (IsSystemFontName(creation_params.Family())) {
+diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
+index c76f6553e1..ef460d5c9f 100644
+--- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
++++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
+@@ -31,6 +31,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
++#include "third_party/blink/renderer/platform/superfik/canvas.h"
+ 
+ #include "base/compiler_specific.h"
+ #include "base/memory/ptr_util.h"
+@@ -99,6 +100,12 @@ ImageDataBuffer::ImageDataBuffer(scoped_refptr<StaticBitmapImage> image) {
+   is_valid_ = true;
+ }
+ 
++void ImageDataBuffer::ApplyLaboratoryReadback() {
++  if (!superfik::Enabled("canvas")) return;
++  retained_image_ = superfik::CanvasImage(retained_image_);
++  if (retained_image_) retained_image_->peekPixels(&pixmap_);
++}
++
+ ImageDataBuffer::ImageDataBuffer(const SkPixmap& pixmap)
+     : pixmap_(pixmap),
+       is_valid_(pixmap_.addr() &&
+diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.h b/third_party/blink/renderer/platform/graphics/image_data_buffer.h
+index 7788473df7..e3302d3df4 100644
+--- a/third_party/blink/renderer/platform/graphics/image_data_buffer.h
++++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.h
+@@ -58,6 +58,7 @@ class PLATFORM_EXPORT ImageDataBuffer {
+                    Vector<unsigned char>* encoded_image) const;
+ 
+   base::span<const uint8_t> PixelData() const;
++  void ApplyLaboratoryReadback();
+ 
+  private:
+   ImageDataBuffer(const SkPixmap&);
+diff --git a/third_party/blink/renderer/platform/superfik/canvas.h b/third_party/blink/renderer/platform/superfik/canvas.h
+new file mode 100644
+index 0000000000..255407df79
+--- /dev/null
++++ b/third_party/blink/renderer/platform/superfik/canvas.h
+@@ -0,0 +1,61 @@
++// Copyright 2026 Superfik contributors. BSD-style license.
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SUPERFIK_CANVAS_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SUPERFIK_CANVAS_H_
++#include "third_party/blink/renderer/platform/superfik/profile.h"
++#include "base/compiler_specific.h"
++#include "third_party/skia/include/core/SkData.h"
++#include "third_party/skia/include/core/SkImage.h"
++#include "third_party/skia/include/core/SkPixmap.h"
++
++namespace blink::superfik {
++// Quantize only exported readbacks, never the displayed backing store.
++// The pattern depends on canonical RGB values, so cropped reads, WebGL's
++// inverted row order and image exports agree. Reapplying is idempotent.
++inline void CanvasBytes(base::span<uint8_t> data, int width, int height, size_t row_bytes) {
++  if (!Enabled("canvas") || !Seed()) return;
++  for (int y = 0; y < height; ++y) {
++    for (int x = 0; x < width; ++x) {
++      auto pixel = data.subspan(y * row_bytes + x * 4, 4);
++      if (!pixel[3]) continue;
++      const uint32_t key = (pixel[0] >> 2) | ((pixel[1] >> 2) << 6) | ((pixel[2] >> 2) << 12);
++      const uint32_t pattern = Mix(Seed() ^ key);
++      for (int c = 0; c < 3; ++c)
++        pixel[c] = (pixel[c] & ~3U) | ((pattern >> (c * 2)) & 3U);
++    }
++  }
++}
++
++inline sk_sp<SkImage> CanvasImage(sk_sp<SkImage> actual) {
++  if (!Enabled("canvas") || !Seed() || !actual) return actual;
++  const auto info = SkImageInfo::Make(actual->width(), actual->height(), kRGBA_8888_SkColorType,
++                                     kUnpremul_SkAlphaType, actual->refColorSpace());
++  const size_t row_bytes = info.minRowBytes();
++  const size_t size = info.computeByteSize(row_bytes);
++  if (SkImageInfo::ByteSizeOverflowed(size)) return actual;
++  auto data = SkData::MakeUninitialized(size);
++  if (!data || !actual->readPixels(info, data->writable_data(), row_bytes, 0, 0)) return actual;
++  // SAFETY: SkData owns exactly size bytes in this new allocation.
++  auto bytes = UNSAFE_BUFFERS(base::span<uint8_t>(base::unchecked,
++      static_cast<uint8_t*>(data->writable_data()), size));
++  CanvasBytes(bytes, info.width(), info.height(), row_bytes);
++  return SkImages::RasterFromData(info, std::move(data), row_bytes);
++}
++
++inline void CanvasPixmap(const SkPixmap& target) {
++  if (!Enabled("canvas") || !Seed() || !target.addr()) return;
++  const auto info = SkImageInfo::Make(target.width(), target.height(), kRGBA_8888_SkColorType,
++                                     kUnpremul_SkAlphaType, target.refColorSpace());
++  const size_t row_bytes = info.minRowBytes();
++  const size_t size = info.computeByteSize(row_bytes);
++  if (SkImageInfo::ByteSizeOverflowed(size)) return;
++  auto data = SkData::MakeUninitialized(size);
++  if (!data || !target.readPixels(info, data->writable_data(), row_bytes, 0, 0)) return;
++  // SAFETY: SkData owns exactly size bytes in this new allocation.
++  auto bytes = UNSAFE_BUFFERS(base::span<uint8_t>(base::unchecked,
++      static_cast<uint8_t*>(data->writable_data()), size));
++  CanvasBytes(bytes, info.width(), info.height(), row_bytes);
++  SkPixmap exported(info, data->data(), row_bytes);
++  exported.readPixels(target.info(), target.writable_addr(), target.rowBytes());
++}
++}  // namespace blink::superfik
++#endif
+diff --git a/third_party/blink/renderer/platform/superfik/profile.h b/third_party/blink/renderer/platform/superfik/profile.h
+new file mode 100644
+index 0000000000..4e282c2c72
+--- /dev/null
++++ b/third_party/blink/renderer/platform/superfik/profile.h
+@@ -0,0 +1,95 @@
++// Copyright 2026 Superfik contributors. All rights reserved.
++// Use of this source code is governed by a BSD-style license.
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SUPERFIK_PROFILE_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SUPERFIK_PROFILE_H_
++
++#include <cstdint>
++#include <bit>
++#include <cmath>
++#include <algorithm>
++#include <string>
++#include <string_view>
++#include "base/base64.h"
++#include "base/command_line.h"
++#include "base/containers/span.h"
++#include "base/json/json_reader.h"
++#include "base/no_destructor.h"
++#include "base/values.h"
++#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
++
++namespace blink::superfik {
++// Supplied only by this renderer's BrowserContext, never by page script.
++inline const base::DictValue& Configuration() {
++  static const base::NoDestructor<base::DictValue> configuration([] {
++    std::string json;
++    const auto encoded = base::CommandLine::ForCurrentProcess()->
++        GetSwitchValueASCII("superfik-profile");
++    if (encoded.size() > 90000 || !base::Base64Decode(encoded, &json))
++      return base::DictValue();
++    auto value = base::JSONReader::ReadDict(json, base::JSON_PARSE_RFC);
++    if (!value || !value->FindBool("enabled").value_or(false))
++      return base::DictValue();
++    return std::move(*value);
++  }());
++  return *configuration;
++}
++
++inline bool Enabled(std::string_view key) {
++  return Configuration().FindBool(key).value_or(false);
++}
++
++inline uint32_t Seed() {
++  const double value = Configuration().FindDouble("seed").value_or(0);
++  return std::isfinite(value) && value >= 1 && value <= UINT32_MAX
++             ? static_cast<uint32_t>(value) : 0;
++}
++
++inline String Gpu(std::string_view key, const String& actual) {
++  const auto* gpu = Configuration().FindDict("gpu");
++  const auto* value = gpu ? gpu->FindString(key) : nullptr;
++  return value && !value->empty() ? String::FromUtf8(*value) : actual;
++}
++
++inline uint32_t Mix(uint32_t value) {
++  value ^= value >> 16; value *= 0x7feb352dU;
++  value ^= value >> 15; value *= 0x846ca68bU;
++  return value ^ (value >> 16);
++}
++
++inline void Audio(base::span<float> samples, uint32_t channel = 0) {
++  if (!Enabled("audio") || !Seed()) return;
++  for (size_t i = 0; i < samples.size(); ++i) {
++    if (samples[i] == 0 || !std::isfinite(samples[i])) continue;
++    auto bits = std::bit_cast<uint32_t>(samples[i]);
++    bits = (bits & ~15U) | (Mix(Seed() ^ channel ^ static_cast<uint32_t>(i)) & 15U);
++    samples[i] = std::bit_cast<float>(bits);
++  }
++}
++
++inline void AudioBytes(base::span<uint8_t> samples) {
++  if (!Enabled("audio") || !Seed()) return;
++  for (size_t i = 0; i < samples.size(); ++i) {
++    if (samples[i] == 0 || samples[i] == 128) continue;
++    samples[i] = (samples[i] & ~1U) | (Mix(Seed() ^ static_cast<uint32_t>(i)) & 1U);
++  }
++}
++
++inline bool FontAllowed(const String& family) {
++  const auto* fonts = Configuration().FindList("fonts");
++  if (!fonts || fonts->empty()) return true;
++  std::string name = family.FoldCase().Utf8();
++  std::erase(name, ' ');
++  // Keep native last-resort/system/emoji fallback usable. Web fonts do not
++  // pass through this local-font matching gate.
++  for (const auto* fallback : {"times", "lucidagrande", "applecoloremoji", "system-ui", "-apple-system"})
++    if (name == fallback) return true;
++  for (const auto& font : *fonts) {
++    if (!font.is_string()) continue;
++    std::string allowed = String::FromUtf8(font.GetString()).FoldCase().Utf8();
++    std::erase(allowed, ' ');
++    if (name == allowed || name.starts_with(allowed + "-")) return true;
++  }
++  return false;
++}
++}  // namespace blink::superfik
++#endif

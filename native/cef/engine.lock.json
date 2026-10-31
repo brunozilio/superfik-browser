@@ -23,6 +23,26 @@
       "name": "0003-native-hardware-getters.patch",
       "repository": "chromium",
       "sha256": "03a469df35075fbef053a88c90f55edeaed19dba6ec38d080d8f4348f5e77cda"
+    },
+    {
+      "name": "0004-native-profile-transport.patch",
+      "repository": "cef",
+      "sha256": "cddc5dad1ffdd8be5e9e84d1015a752a3e5f9ea0ad00729bb4c4ff40c2276202"
+    },
+    {
+      "name": "0005-native-profile-surfaces.patch",
+      "repository": "chromium",
+      "sha256": "aac9838d08146f950dbd2bf8653c901a000d5eff1a0819e13ed0e824ea6069b6"
+    },
+    {
+      "name": "0006-canvas-readback-integration.patch",
+      "repository": "chromium",
+      "sha256": "cf0518f505d01f8ed044dea697838de89b66567c9b0e8c7fed8a335a210e139f"
+    },
+    {
+      "name": "0007-webgl-export-consistency.patch",
+      "repository": "chromium",
+      "sha256": "01c8265e197b470072e8fe5a436fd5be5edbbc5010a78f1651e7a72406733d96"
     }
   ]
 }

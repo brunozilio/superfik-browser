@@ -1,0 +1,102 @@
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 023aa4c9bd..49a47b5fd8 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -26,6 +26,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
++#include "third_party/blink/renderer/platform/superfik/canvas.h"
+ 
+ #include <math.h>
+ 
+@@ -1417,12 +1418,23 @@ String HTMLCanvasElement::ToDataURLInternal(
+ 
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
+   if (image_bitmap) {
+-    std::unique_ptr<ImageDataBuffer> data_buffer =
+-        ImageDataBuffer::Create(image_bitmap);
++    std::unique_ptr<ImageDataBuffer> data_buffer;
++    sk_sp<SkImage> laboratory_image;
++    SkPixmap laboratory_pixels;
++    if (superfik::Enabled("canvas")) {
++      auto raster = image_bitmap->MakeUnaccelerated();
++      if (raster) {
++        laboratory_image = superfik::CanvasImage(
++            raster->PaintImageForCurrentFrame().GetSwSkImage());
++        if (laboratory_image && laboratory_image->peekPixels(&laboratory_pixels))
++          data_buffer = ImageDataBuffer::Create(laboratory_pixels);
++      }
++    } else {
++      data_buffer = ImageDataBuffer::Create(image_bitmap);
++    }
+     if (!data_buffer)
+       return String("data:,");
+ 
+-    data_buffer->ApplyLaboratoryReadback();
+     String data_url = data_buffer->ToDataURL(encoding_mime_type, quality);
+     base::TimeDelta elapsed_time = base::TimeTicks::Now() - start_time;
+     float sqrt_pixels =
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 87b9971bab..e965eb4107 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -5360,7 +5360,7 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+     if (format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
+       const auto pack = GetPackPixelStoreParams();
+       const size_t row_bytes = ((static_cast<size_t>(pack.row_length ? pack.row_length : width) * 4 + pack.alignment - 1) / pack.alignment) * pack.alignment;
+-      const size_t start = offset_in_bytes.ValueOrDie() + pack.skip_rows * row_bytes + pack.skip_pixels * 4;
++      const size_t start = static_cast<size_t>(offset_in_bytes.ValueOrDie()) + pack.skip_rows * row_bytes + pack.skip_pixels * 4;
+       const size_t length = (height - 1) * row_bytes + width * 4;
+       superfik::CanvasBytes(pixels->ByteSpanMaybeShared().subspan(start, length),
+                             width, height, row_bytes);
+diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
+index ef460d5c9f..c76f6553e1 100644
+--- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
++++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
+@@ -31,7 +31,6 @@
+  */
+ 
+ #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
+-#include "third_party/blink/renderer/platform/superfik/canvas.h"
+ 
+ #include "base/compiler_specific.h"
+ #include "base/memory/ptr_util.h"
+@@ -100,12 +99,6 @@ ImageDataBuffer::ImageDataBuffer(scoped_refptr<StaticBitmapImage> image) {
+   is_valid_ = true;
+ }
+ 
+-void ImageDataBuffer::ApplyLaboratoryReadback() {
+-  if (!superfik::Enabled("canvas")) return;
+-  retained_image_ = superfik::CanvasImage(retained_image_);
+-  if (retained_image_) retained_image_->peekPixels(&pixmap_);
+-}
+-
+ ImageDataBuffer::ImageDataBuffer(const SkPixmap& pixmap)
+     : pixmap_(pixmap),
+       is_valid_(pixmap_.addr() &&
+diff --git a/third_party/blink/renderer/platform/graphics/image_data_buffer.h b/third_party/blink/renderer/platform/graphics/image_data_buffer.h
+index e3302d3df4..7788473df7 100644
+--- a/third_party/blink/renderer/platform/graphics/image_data_buffer.h
++++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.h
+@@ -58,7 +58,6 @@ class PLATFORM_EXPORT ImageDataBuffer {
+                    Vector<unsigned char>* encoded_image) const;
+ 
+   base::span<const uint8_t> PixelData() const;
+-  void ApplyLaboratoryReadback();
+ 
+  private:
+   ImageDataBuffer(const SkPixmap&);
+diff --git a/third_party/blink/renderer/platform/superfik/canvas.h b/third_party/blink/renderer/platform/superfik/canvas.h
+index 255407df79..f1697c7511 100644
+--- a/third_party/blink/renderer/platform/superfik/canvas.h
++++ b/third_party/blink/renderer/platform/superfik/canvas.h
+@@ -15,7 +15,7 @@ inline void CanvasBytes(base::span<uint8_t> data, int width, int height, size_t
+   if (!Enabled("canvas") || !Seed()) return;
+   for (int y = 0; y < height; ++y) {
+     for (int x = 0; x < width; ++x) {
+-      auto pixel = data.subspan(y * row_bytes + x * 4, 4);
++      auto pixel = data.subspan(y * row_bytes + x * 4).first<4>();
+       if (!pixel[3]) continue;
+       const uint32_t key = (pixel[0] >> 2) | ((pixel[1] >> 2) << 6) | ((pixel[2] >> 2) << 12);
+       const uint32_t pattern = Mix(Seed() ^ key);

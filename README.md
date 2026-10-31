@@ -9,17 +9,25 @@ it does not compile Chromium on the standard hosted macOS runner.
 
 ## Status
 
-The initial engine compiled locally and passed artifact integrity and native
-marker checks. No binary release is published yet. The patch series adds an engine marker and
-opt-in CPU/memory overrides per browser context, including device-memory
-client hints. Runtime isolation and compatibility testing are still required.
-GPU, canvas, audio and other fingerprint overrides are not implemented.
+The first engine release,
+[`cef-154.0.34-superfik.1`](https://github.com/brunozilio/superfik-browser/releases/tag/cef-154.0.34-superfik.1),
+is public and is consumed by Superfik CI.
 
-Integration acceptance confirmed distinct CPU/memory values in pages, iframes
-and dedicated workers, and preserved defaults in unmodified/private contexts.
-It also exposed a renderer-side device-memory HTTP hint inconsistency. The
-current patch revision moves that override into Blink's shared memory helper;
-its rebuilt artifact and complete acceptance test are still pending.
+The next candidate adds native per-context GPU identification, seeded canvas
+and audio readbacks, local-font restrictions and WebRTC policy. The application's
+CEF integration provides screen metrics, HTTP(S) proxies with scoped
+authentication, Keychain storage and a Settings profile editor.
+
+Local acceptance covers pages, frames, workers, WebGL/WebGPU, WebGL2 pixel-pack
+and float reads, canvas exports, audio, fonts, memory headers, repeated launches,
+default/private contexts, legacy real-value restoration and clicks at DPR 1/2.
+Nine proxy cases verify HTTP/TLS proxies and origins, CONNECT, worker requests,
+authentication, invalid certificates/credentials and no direct origin/UDP
+fallback. No JavaScript API replacements are used.
+
+See the [native profile protocol](native/cef/PROFILE_PROTOCOL.md) for exact
+behavior and precision/fallback limits. Broader website compatibility and
+separate agent-tool improvements still need their own acceptance.
 
 ## Build and validate locally
 
@@ -45,7 +53,7 @@ After the engine build succeeds, create a local release package and a draft:
 
 ```sh
 python3 scripts/publish_engine.py target/native-cef-artifact \
-  --tag cef-154.0.34-superfik.1
+  --tag cef-154.0.34-superfik.2
 ```
 
 The publisher verifies the native marker, manifest, patch hashes and build
