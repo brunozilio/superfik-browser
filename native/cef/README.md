@@ -24,13 +24,6 @@ clicks at DPR 1/2. Nine proxy scenarios cover HTTP/TLS proxies, HTTP/TLS origins
 CONNECT, worker requests, invalid credentials, unavailable proxies, certificate
 rejection and no direct origin/UDP fallback.
 
-The `.3` candidate adds `0008-touch-id-team.patch`: Chromium's branding
-sets `MAC_TEAM_ID=F3BSQ3FZTF`, so the Touch ID authenticator expects the
-Keychain group `F3BSQ3FZTF.org.chromium.Chromium.webauthn` that Superfik's
-signed bundles carry (the group is a compile-time constant in
-`chrome_web_authentication_delegate.cc`; stock Chromium leaves the team
-empty and Touch ID unavailable).
-
 These are laboratory controls, not GPU/audio-device emulation or a guarantee
 of universal website compatibility. See [native profile protocol](PROFILE_PROTOCOL.md).
 

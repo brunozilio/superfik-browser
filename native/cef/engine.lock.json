@@ -43,11 +43,6 @@
       "name": "0007-webgl-export-consistency.patch",
       "repository": "chromium",
       "sha256": "01c8265e197b470072e8fe5a436fd5be5edbbc5010a78f1651e7a72406733d96"
-    },
-    {
-      "name": "0008-touch-id-team.patch",
-      "repository": "chromium",
-      "sha256": "7f1acd07688441c7027edbb08e9be55a8dacd65847521a44a2c16bf859d954bf"
     }
   ]
 }
